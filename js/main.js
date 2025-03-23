@@ -182,7 +182,16 @@ async function drawEvalBar(isInitial){
   else{
     document.getElementById("evalbar-inner").style.top = "0%";
   }
-  setTimeout(()=>document.getElementById("evalbar-inner").style.transition = "height 0.5s", 100);
+  let timeout = 0;
+  if(isInitial){
+  timeout = 100;
+  }
+  if(ourColor){
+    setTimeout(()=>document.getElementById("evalbar-inner").style.transition = "top 0.5s, height 0.5s", timeout);
+  }
+  else{
+    setTimeout(()=>document.getElementById("evalbar-inner").style.transition = "height 0.5s", timeout);
+  }
 }
 
 const archconf = {
@@ -261,12 +270,13 @@ function updateButtonActivation(){
   document.querySelectorAll(".singlemove")[moveSelected-1]?.classList.add("active")
 }
 function drawBoard(){
-  let moves = currentGame.moves.slice(0, moveSelected).join(" ");
-  currentBoard.fen(currentGame.initialFen);
-  moves.split(" ").forEach(m=>{
+  let moves = currentGame.moves.slice(0, moveSelected);
+  currentBoard.load(currentGame.initialFen);
+  moves.forEach(m=>{
     currentBoard.move(m);
   })
   board.position(currentBoard.fen(), true)
+  drawEvalBar();
 }
 
 function onDragStart (source, piece, position, orientation) {
@@ -294,11 +304,17 @@ function onSnapEnd () {
 
 document.body.addEventListener("keydown", e=>{
   if(e.key == "ArrowRight"){
+    if(moveSelected == currentGame.moves.length){
+      return
+    }
     moveSelected++;
     updateButtonActivation();
     drawBoard();
   }
   else if(e.key == "ArrowLeft"){
+    if(moveSelected == 0){
+      return;
+    }
     moveSelected--;
     updateButtonActivation();
     drawBoard();

@@ -237,6 +237,7 @@ div.doublemove > div:nth-child(2){
   height: 100%;
   background-color: #aa6666BF; /* Brightened red */
   border-radius: 10px;
+  overflow: hidden;
 }
 .eval-wrapper{
   display: inline-block;
