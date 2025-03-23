@@ -1,322 +1,366 @@
-var wasmSupported = typeof WebAssembly === 'object' && WebAssembly.validate(Uint8Array.of(0x0, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00));
+// ------------------
+// Global Configuration & State
+// ------------------
 
-var stockfish = new Worker(wasmSupported ? 'js/stockfish.wasm.js' : 'js/stockfish.js');
+// Check for WebAssembly support
+const wasmSupported =
+  typeof WebAssembly === 'object' &&
+  WebAssembly.validate(
+    Uint8Array.of(0x0, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00)
+  );
+
+// Stockfish worker initialization
+const stockfishWorker = new Worker(
+  wasmSupported ? 'js/stockfish.wasm.js' : 'js/stockfish.js'
+);
 
 let stockfishLoaded = false;
+let stockfishOnLoadCallback = null;
+const stockfishMessageResolvers = [];
 
-stockfish.onmessage = function(event){
-  if(event.data == "loaded"){
-    console.log("Stockfish loaded")
-    stockfishLoaded = true;
-  }
+// Chessboard config constant; must be declared before loadGame uses it.
+const archconf = {
+  pieceTheme: 'img/chesspieces/wikipedia/{piece}.png',
+};
+
+// Puzzle and rating state
+let puzzles = [];
+let currentPuzzle = null;
+let rating = localStorage.getItem("rating");
+if (!rating) {
+  rating = 1200;
+  localStorage.setItem("rating", rating);
 }
-async function waitForStockfish(){
-  return new Promise((resolve, reject)=>{
-    if(stockfishLoaded){
-      resolve()
-    }
-    else{
-      stockfish.addEventListener('message', function (e) {
-        if(e.data == "loaded"){
-          //setTimeout(()=>resolve(), 1000)
-          resolve()
-        }
-      });
-    }
-  })
-}
-
-async function sfMove(fen){
-  await waitForStockfish();
-  stockfish.postMessage('position fen ' + fen);
-  stockfish.postMessage('go depth 11');
-  return new Promise((resolve, reject)=>{
-    stockfish.addEventListener('message', function (e) {
-      if(e.data.startsWith("bestmove")){
-        resolve(e.data.split(" ")[1])
-      }
-    });
-  })
-}
-
-async function delayResult(ms, result){
-  return new Promise((resolve, reject)=>{
-    setTimeout(()=>resolve(result), ms)
-  })
-}
-
-function winRate(centipawn){
-  return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * centipawn)) - 1) // https://lichess.org/page/accuracy
-}
-
-async function sfEval(fen){
-  let whiteTurn = fen.split(" ")[1] == "w";
-  console.log(whiteTurn)
-  await waitForStockfish();
-  stockfish.postMessage('position fen ' + fen);
-  stockfish.postMessage('go depth 10');
-  return new Promise((resolve, reject)=>{
-    let latestEval = null;
-    stockfish.addEventListener('message', function (e) {
-      if(e.data.includes(" cp ")) {
-        const match = e.data.match(/score cp (-?\d+)/);
-        if (match) {
-          console.log("CURRENT RATING", match[1])
-          latestEval = match[1];
-        }
-      }
-      if(e.data.includes("mate ")){
-        const match = e.data.match(/mate (-?\d+)/);
-        if (match) {
-          if(match[1] > 0){
-            latestEval = 10000;
-          }
-          else{
-            latestEval = -10000;
-          }
-        }
-      }
-      if(e.data.includes("bestmove")){
-        if(whiteTurn == false){
-          latestEval = -latestEval;
-        }
-          console.log("FINAL RATING", latestEval)
-        resolve(latestEval)
-      }
-    });
-  })
-}
-
-
-let rating = localStorage.getItem("rating")
 const NUM_MOVES = 3;
 
-if(!rating){
-  rating = 1200;
-  localStorage.setItem("rating", rating)
-}
-const puzzles = await fetch("rated_reverse_puzzles.tsv").then(r=>r.text()).then(t=>t.split("\n").map(l=>l.split("\t")))
-let currentPuzzle = null;
-
-// Choose random puzzle based on rating
-function getPuzzle(){
-  let availablePuzzles = puzzles.filter(p=>Math.abs(p[1]-rating) < 100);
-  if(availablePuzzles.length == 0){
-    availablePuzzles = puzzles;
-  }
-  currentPuzzle = availablePuzzles[Math.floor(Math.random()*availablePuzzles.length)];
-  return currentPuzzle;
-}
-
-let board = Chessboard('playboard')
+// Board and game state
+let board = null; // Will be initialized in loadGame
 let currentGame = null;
-let currentBoard = new Chess()
+let currentBoard = new Chess();
 let moveSelected = null;
 let playedMove = null;
 let whiteTurn = true;
 let ourColor = true;
 
-function nextPuzzle(){
-  let p = getPuzzle();
-  let fen = p[0];
-  let turn = p[0].split(" ")[1];
-  if(turn == "w"){
+// ------------------
+// Stockfish Communication
+// ------------------
+
+stockfishWorker.onmessage = function (event) {
+  const data = event.data;
+  if (data === "loaded") {
+    console.log("Stockfish loaded");
+    stockfishLoaded = true;
+    if (stockfishOnLoadCallback) {
+      stockfishOnLoadCallback();
+      stockfishOnLoadCallback = null;
+    }
+    return;
+  }
+  // Process any waiting resolvers
+  for (let i = 0; i < stockfishMessageResolvers.length; i++) {
+    const { condition, resolve } = stockfishMessageResolvers[i];
+    if (condition(data)) {
+      resolve(data);
+      stockfishMessageResolvers.splice(i, 1);
+      i--;
+    }
+  }
+};
+
+function waitForStockfish() {
+  return new Promise((resolve) => {
+    if (stockfishLoaded) {
+      resolve();
+    } else {
+      stockfishOnLoadCallback = resolve;
+    }
+  });
+}
+
+function sendStockfishCommand(command) {
+  stockfishWorker.postMessage(command);
+}
+
+function awaitStockfishCondition(condition) {
+  return new Promise((resolve) => {
+    stockfishMessageResolvers.push({ condition, resolve });
+  });
+}
+
+async function sfMove(fen) {
+  await waitForStockfish();
+  sendStockfishCommand('position fen ' + fen);
+  sendStockfishCommand('go depth 11');
+  const data = await awaitStockfishCondition((d) => d.startsWith("bestmove"));
+  return data.split(" ")[1];
+}
+
+async function sfEval(fen) {
+  const whiteTurnForEval = fen.split(" ")[1] === "w";
+  await waitForStockfish();
+  sendStockfishCommand('position fen ' + fen);
+  sendStockfishCommand('go depth 10');
+  let latestEval = null;
+
+  while (true) {
+    const data = await awaitStockfishCondition(
+      (d) => d.includes("bestmove") || d.includes(" score ")
+    );
+
+    if (data.includes(" cp ")) {
+      const match = data.match(/score cp (-?\d+)/);
+      if (match) {
+        latestEval = parseInt(match[1]);
+      }
+    }
+    if (data.includes("mate ")) {
+      const match = data.match(/mate (-?\d+)/);
+      if (match) {
+        latestEval = parseInt(match[1]) > 0 ? 10000 : -10000;
+      }
+    }
+    if (data.startsWith("bestmove")) {
+      if (!whiteTurnForEval) {
+        latestEval = -latestEval;
+      }
+      return latestEval;
+    }
+  }
+}
+
+async function delayResult(ms, result) {
+  return new Promise((resolve) => setTimeout(() => resolve(result), ms));
+}
+
+function winRate(centipawn) {
+  return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * centipawn)) - 1);
+}
+
+// ------------------
+// Puzzle & Game Initialization
+// ------------------
+
+function getPuzzle() {
+  // Filter out any empty lines (which would be undefined)
+  const validPuzzles = puzzles.filter((p) => p && p.length > 1);
+  let availablePuzzles = validPuzzles.filter((p) => Math.abs(p[1] - rating) < 100);
+  if (availablePuzzles.length === 0) {
+    availablePuzzles = validPuzzles;
+  }
+  currentPuzzle = availablePuzzles[Math.floor(Math.random() * availablePuzzles.length)];
+  return currentPuzzle;
+}
+
+function nextPuzzle() {
+  const p = getPuzzle();
+  if (!p) {
+    console.error("No valid puzzle found.");
+    return;
+  }
+  const fen = p[0];
+  const turn = fen.split(" ")[1];
+  if (turn === "w") {
     whiteTurn = true;
     ourColor = true;
-  }
-  else{
+  } else {
     whiteTurn = false;
     ourColor = false;
   }
-  currentGame = {moves: []};
-  currentGame.initialFen = fen;
+  currentGame = { moves: [], initialFen: fen };
   currentBoard = new Chess(fen);
   loadGame(currentGame);
 }
-nextPuzzle();
 
-document.getElementById("ratingnum").innerText = rating;
+async function loadPuzzles() {
+  const response = await fetch("rated_reverse_puzzles.tsv");
+  const text = await response.text();
+  // Split by newlines, filtering out empty lines
+  puzzles = text
+    .split("\n")
+    .filter((line) => line.trim().length > 0)
+    .map((l) => l.split("\t"));
+}
 
-function redrawMoves(){
+// ------------------
+// UI Rendering & Board Setup
+// ------------------
 
+function redrawMoves() {
+  const movesContainer = document.getElementById("moves");
+  movesContainer.innerHTML = "<br><br>";
   let doubleMove = [];
-  document.getElementById("moves").innerHTML = "<br><br>";
-  for(let i = 0; i < currentGame.moves.length; i++){
-    doubleMove.push(currentGame.moves[i]);
-    if(doubleMove.length < 2 && i != currentGame.moves.length - 1){
-      continue;
-    }
-    console.log(doubleMove)
-    let el = document.createElement("div");
+  currentGame.moves.forEach((move, index) => {
+    doubleMove.push(move);
+    // Wait for a pair unless it's the last single move.
+    if (doubleMove.length < 2 && index !== currentGame.moves.length - 1) return;
+
+    const el = document.createElement("div");
     el.className = "doublemove";
-    let subel1 = document.createElement("div");
-    let subel2 = document.createElement("div");
 
-    subel1.className = subel2.className = "singlemove";
+    const subel1 = document.createElement("div");
+    const subel2 = document.createElement("div");
+    const successBox = document.createElement("div");
+    successBox.className = "successbox";
+    successBox.innerText = "✅";
+
+    subel1.className = "singlemove";
+    subel2.className = "singlemove";
     subel1.innerText = doubleMove[0];
-    if(doubleMove[1]){
-    subel2.innerText = doubleMove[1].from + " " + doubleMove[1].to;
+    if (doubleMove[1]) {
+      subel2.innerText = doubleMove[1].from + " " + doubleMove[1].to;
     }
-
-    el.appendChild(subel1)
-    if(doubleMove[1]){
-      el.appendChild(subel2)
-      doubleMove = []
+    el.appendChild(subel1);
+    if (doubleMove[1]) {
+      el.appendChild(subel2);
+      el.appendChild(successBox);
+      doubleMove = [];
     }
-
-    document.getElementById("moves").appendChild(el);
-  }
-
+    movesContainer.appendChild(el);
+  });
 }
-async function drawEvalBar(isInitial){
-  if(isInitial){
-    document.getElementById("evalbar-inner").style.transition = "none";
+
+async function drawEvalBar(isInitial) {
+  const evalBarInner = document.getElementById("evalbar-inner");
+  if (isInitial) {
+    evalBarInner.style.transition = "none";
   }
-  let sfeval = await sfEval(currentBoard.fen());
-  let centipawn = parseInt(sfeval);
-  let winrate = winRate(centipawn);
-  document.getElementById("evalbar-inner").style.height = winrate + "%";
-  if(ourColor){
-    document.getElementById("evalbar-inner").style.top = (100-winrate) + "%";
-  }
-  else{
-    document.getElementById("evalbar-inner").style.top = "0%";
-  }
-  let timeout = 0;
-  if(isInitial){
-  timeout = 100;
-  }
-  if(ourColor){
-    setTimeout(()=>document.getElementById("evalbar-inner").style.transition = "top 0.5s, height 0.5s", timeout);
-  }
-  else{
-    setTimeout(()=>document.getElementById("evalbar-inner").style.transition = "height 0.5s", timeout);
+  const sfeval = await sfEval(currentBoard.fen());
+  const centipawn = parseInt(sfeval);
+  const rate = winRate(centipawn);
+  evalBarInner.style.height = rate + "%";
+  evalBarInner.style.top = ourColor ? (100 - rate) + "%" : "0%";
+
+  const timeout = isInitial ? 100 : 0;
+  if (ourColor) {
+    setTimeout(() => (evalBarInner.style.transition = "top 0.5s, height 0.5s"), timeout);
+  } else {
+    setTimeout(() => (evalBarInner.style.transition = "height 0.5s"), timeout);
   }
 }
 
-const archconf = {
-  pieceTheme: 'img/chesspieces/wikipedia/{piece}.png',
-}
-
-function loadGame(game){
+function loadGame(game) {
   const config = {
     position: currentBoard.fen(),
-    pieceTheme: 'img/chesspieces/wikipedia/{piece}.png',
+    pieceTheme: archconf.pieceTheme,
     draggable: Boolean(currentGame),
     onDragStart: onDragStart,
     onDrop: onDrop,
-    onSnapEnd: onSnapEnd
-  }
+    onSnapEnd: onSnapEnd,
+  };
   board = Chessboard('playboard', config);
-  board.orientation(ourColor?"white":"black")
+  board.orientation(ourColor ? "white" : "black");
   redrawMoves();
-
   playedMove = null;
-  moveSelected = currentGame.moves.length
-
+  moveSelected = currentGame.moves.length;
   updateButtonActivation();
-  drawBoard()
+  drawBoard();
   drawEvalBar(true);
 }
 
-function playMove(move){
+function updateButtonActivation() {
+  document.querySelector(".singlemove.active")?.classList.remove("active");
+  document.querySelectorAll(".singlemove")[moveSelected - 1]?.classList.add("active");
+}
+
+function drawBoard() {
+  const moves = currentGame.moves.slice(0, moveSelected);
+  currentBoard.load(currentGame.initialFen);
+  moves.forEach((m) => currentBoard.move(m));
+  board.position(currentBoard.fen(), true);
+  drawEvalBar();
+}
+
+// ------------------
+// Game Moves & Interaction
+// ------------------
+
+function playMove(move) {
   whiteTurn = !whiteTurn;
   playedMove = move;
-  currentGame.moves.push(playedMove)
-  moveSelected = currentGame.moves.length
+  currentGame.moves.push(playedMove);
+  moveSelected = currentGame.moves.length;
   redrawMoves();
   updateButtonActivation();
   stockfishMove();
   drawEvalBar();
 }
-function stockfishMove(){
+
+function stockfishMove() {
   whiteTurn = !whiteTurn;
-  let fen = currentBoard.fen();
-  delayResult(500, sfMove(fen)).then(m=>{
-    let startPos = m.slice(0, 2);
-    let endPos = m.slice(2, 4);
-    let move = {from: startPos, to: endPos, promotion: 'q'};
+  const fen = currentBoard.fen();
+  delayResult(500, sfMove(fen)).then((m) => {
+    const startPos = m.slice(0, 2);
+    const endPos = m.slice(2, 4);
+    const move = { from: startPos, to: endPos, promotion: 'q' };
     currentBoard.move(move);
-    board.position(currentBoard.fen(), true)
+    board.position(currentBoard.fen(), true);
     playedMove = m;
-    currentGame.moves.push(move)
-    moveSelected = currentGame.moves.length
+    currentGame.moves.push(move);
+    moveSelected = currentGame.moves.length;
     redrawMoves();
     updateButtonActivation();
     drawEvalBar();
-  })
+  });
 }
 
-function onDrop (source, target) {
-  // see if the move is legal
-  var move = currentBoard.move({
+function onDrop(source, target) {
+  const move = currentBoard.move({
     from: source,
     to: target,
-    promotion: 'q' 
-  })
-
-
-  // illegal move
-  if (move === null){
-    return 'snapback'
-  }
-
-  let movePGN = currentBoard.pgn().split(" ").slice(-1)[0];
+    promotion: 'q',
+  });
+  if (move === null) return 'snapback';
+  const movePGN = currentBoard.pgn().split(" ").slice(-1)[0];
   playMove(movePGN);
-
-}
-function updateButtonActivation(){
-  document.querySelector(".singlemove.active")?.classList.remove("active");
-  document.querySelectorAll(".singlemove")[moveSelected-1]?.classList.add("active")
-}
-function drawBoard(){
-  let moves = currentGame.moves.slice(0, moveSelected);
-  currentBoard.load(currentGame.initialFen);
-  moves.forEach(m=>{
-    currentBoard.move(m);
-  })
-  board.position(currentBoard.fen(), true)
-  drawEvalBar();
 }
 
-function onDragStart (source, piece, position, orientation) {
-  if(playedMove){
-    //return false;
+function onDragStart(source, piece, position, orientation) {
+  if (playedMove) {
+    // Optionally prevent dragging if a move was already played
   }
-  if(moveSelected != currentGame.moves.length){
+  if (moveSelected !== currentGame.moves.length) return false;
+  if (currentBoard.game_over()) return false;
+  if (
+    (currentBoard.turn() === 'w' && piece.search(/^b/) !== -1) ||
+    (currentBoard.turn() === 'b' && piece.search(/^w/) !== -1)
+  )
     return false;
-  }
-  if(currentGame.id == -1){
-    return false;
-  }
-  // do not pick up pieces if the game is over
-  if (currentBoard.game_over()) return false
-
-  // only pick up pieces for the side to move
-  if ((currentBoard.turn() === 'w' && piece.search(/^b/) !== -1) ||
-    (currentBoard.turn() === 'b' && piece.search(/^w/) !== -1)) {
-    return false
-  }
-}
-function onSnapEnd () {
-  board.position(currentBoard.fen())
 }
 
-document.body.addEventListener("keydown", e=>{
-  if(e.key == "ArrowRight"){
-    if(moveSelected == currentGame.moves.length){
-      return
-    }
+function onSnapEnd() {
+  board.position(currentBoard.fen());
+}
+
+// ------------------
+// Keyboard Navigation
+// ------------------
+
+document.body.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowRight") {
+    if (moveSelected === currentGame.moves.length) return;
     moveSelected++;
     updateButtonActivation();
     drawBoard();
-  }
-  else if(e.key == "ArrowLeft"){
-    if(moveSelected == 0){
-      return;
-    }
+  } else if (e.key === "ArrowLeft") {
+    if (moveSelected === 0) return;
     moveSelected--;
     updateButtonActivation();
     drawBoard();
   }
-})
+});
+
+// ------------------
+// Initialization
+// ------------------
+
+async function initGame() {
+  await loadPuzzles();
+  // Now that puzzles are loaded, start with the first puzzle.
+  nextPuzzle();
+  // Update rating display if needed.
+  document.getElementById("ratingnum").innerText = rating;
+}
+
+initGame();
+
