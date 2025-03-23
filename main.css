@@ -135,7 +135,7 @@ input[type=number]::-webkit-inner-spin-button {
   height: 70vh;
   border-radius: 10px;
   background-color: var(--main-color);
-  box-shadow: 5px 5px 10px 10px #4444445F, -5px -5px 10px 10px #0808088F; /* Increased shadow contrast */
+  box-shadow: 3px 3px 5px 5px #4444445F, -3px -3px 5px 5px #0808088F; /* Increased shadow contrast */
   overflow-y: scroll;
 }
 #rating{
@@ -237,6 +237,7 @@ div.doublemove > div:nth-child(2){
 #ratingnum{
   color: #6666aaBF;
   font-size: 2em;
+  text-shadow: -1px -1px 0px #7777bbBF, 1px 1px 0px #555599BF; /* Brightened shadow */
 }
 #evalbar{
   width: 50px;

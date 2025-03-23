@@ -24,12 +24,13 @@ const archconf = {
 };
 
 // Puzzle and rating state
+import {glicko2RatingUpdate} from './glicko2.js'; // glicko2RatingUpdate(rating, rd, sigma, tau, oppRating, oppRd, score, epsilon = 1e-6)
 let puzzles = [];
 let currentPuzzle = null;
-let rating = localStorage.getItem("rating");
+let rating = JSON.parse(localStorage.getItem("glicko2rating"));
 if (!rating) {
-  rating = 1200;
-  localStorage.setItem("rating", rating);
+  rating = {rating: 1500, rd: 200, sigma: 0.06};
+  localStorage.setItem("glicko2rating", JSON.stringify(rating));
 }
 const NUM_MOVES = 3;
 
@@ -41,6 +42,7 @@ let moveSelected = null;
 let playedMove = null;
 let movesSurvived = 0;
 let isAlive = true;
+let isWin = false;
 let initialEval = null;
 let whiteTurn = true;
 let ourColor = true;
@@ -140,6 +142,14 @@ async function sfEval(fen) {
 async function delayResult(ms, result) {
   return new Promise((resolve) => setTimeout(() => resolve(result), ms));
 }
+const captureAudio = new Audio("sounds/capture.mp3");
+const moveAudio = new Audio("sounds/move.mp3");
+const checkAudio = new Audio("sounds/check.mp3");
+const checkmateAudio = new Audio("sounds/checkmate.mp3");
+
+function playSound(sound){
+  sound.play();
+}
 
 function winRate(centipawn) {
   return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * centipawn)) - 1);
@@ -152,7 +162,7 @@ function winRate(centipawn) {
 function getPuzzle() {
   // Filter out any empty lines (which would be undefined)
   const validPuzzles = puzzles.filter((p) => p && p.length > 1);
-  let availablePuzzles = validPuzzles.filter((p) => Math.abs(p[1] - rating) < 100);
+  let availablePuzzles = validPuzzles.filter((p) => Math.abs(p[1] - rating.rating) < 100);
   if (availablePuzzles.length === 0) {
     availablePuzzles = validPuzzles;
   }
@@ -213,7 +223,7 @@ function redrawMoves() {
     const subel2 = document.createElement("div");
     const successBox = document.createElement("div");
     successBox.className = "successbox";
-    if(movesSurvived >= index){
+    if(movesSurvived > index / 2){
       successBox.innerText = "✅";
     }
     else {
@@ -239,16 +249,16 @@ function redrawMoves() {
   movesContainer.appendChild(statusEl);
   redrawStatus();
 }
+function redrawRating(){
+  document.getElementById("ratingnum").innerText = Math.floor(rating.rating);
+}
 function adjustRating(isWin){
-  let ratingChange = 0;
-  if(isWin){
-    ratingChange = 10;
-  } else {
-    ratingChange = -10;
-  }
-  rating = parseInt(rating) + ratingChange;
-  localStorage.setItem("rating", rating);
-  document.getElementById("ratingnum").innerText = rating;
+  let puzzleRating = currentPuzzle[1];
+  let score = isWin ? 1 : 0;
+  let newRating = glicko2RatingUpdate(rating.rating, rating.rd, rating.sigma, 0.06, puzzleRating, 200, score);
+  rating = newRating;
+  localStorage.setItem("glicko2rating", JSON.stringify(rating));
+  redrawRating();
 }
 function redrawStatus(){
   const statusContainer = document.getElementById("status");
@@ -258,7 +268,11 @@ function redrawStatus(){
   el.innerText = "Moves survived: " + movesSurvived + "/" + NUM_MOVES;
   statusContainer.appendChild(el);
   let isOver = !isAlive || movesSurvived >= NUM_MOVES || currentBoard.game_over();
-  let won = isAlive;
+  let won = isAlive||isWin;
+  if(won && isOver){
+    isWin = true;
+  }
+
   if(isOver){
     if(won){
       el.innerText = "You survived!";
@@ -304,6 +318,7 @@ async function drawEvalBar(isInitial) {
 
 function loadGame(game) {
   isAlive = true;
+  isWin = false;
   movesSurvived = 0;
 
   const config = {
@@ -361,7 +376,8 @@ function stockfishMove() {
     const startPos = m.slice(0, 2);
     const endPos = m.slice(2, 4);
     const move = { from: startPos, to: endPos, promotion: 'q' };
-    currentBoard.move(move);
+    let sfmove = currentBoard.move(move);
+    playSound(sfmove.captured ? captureAudio : moveAudio);
     board.position(currentBoard.fen(), true);
     playedMove = m;
     currentGame.moves.push(move);
@@ -393,6 +409,7 @@ function onDrop(source, target) {
   if (move === null) return 'snapback';
   const movePGN = currentBoard.pgn().split(" ").slice(-1)[0];
   playMove(movePGN);
+  playSound(move.captured ? captureAudio : moveAudio);
 }
 
 function onDragStart(source, piece, position, orientation) {
@@ -419,11 +436,13 @@ function onSnapEnd() {
 document.body.addEventListener("keydown", (e) => {
   if (e.key === "ArrowRight") {
     if (moveSelected === currentGame.moves.length) return;
+    playSound(moveAudio);
     moveSelected++;
     updateButtonActivation();
     drawBoard();
   } else if (e.key === "ArrowLeft") {
     if (moveSelected === 0) return;
+    playSound(moveAudio);
     moveSelected--;
     updateButtonActivation();
     drawBoard();
@@ -439,8 +458,27 @@ async function initGame() {
   // Now that puzzles are loaded, start with the first puzzle.
   nextPuzzle();
   // Update rating display if needed.
-  document.getElementById("ratingnum").innerText = rating;
+  redrawRating();
 }
 
 initGame();
+
+// ------------------
+// Sound initialization
+// ------------------
+
+const audio = new Audio('path/to/sound.mp3');
+
+function enableAudioPlayback() {
+    audio.play().catch(error => {
+        console.error('Audio playback failed:', error);
+    });
+    // Remove the listener after the first interaction to avoid redundant calls
+    window.removeEventListener('click', enableAudioPlayback);
+}
+
+// Enable audio playback on the first user Interaction
+['click', 'keydown', 'touchstart'].forEach(event => {
+    window.addEventListener(event, enableAudioPlayback);
+});
 
