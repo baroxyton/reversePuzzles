@@ -39,6 +39,9 @@ let currentGame = null;
 let currentBoard = new Chess();
 let moveSelected = null;
 let playedMove = null;
+let movesSurvived = 0;
+let isAlive = true;
+let initialEval = null;
 let whiteTurn = true;
 let ourColor = true;
 
@@ -96,7 +99,11 @@ async function sfMove(fen) {
   return data.split(" ")[1];
 }
 
+let evalCache = {};
 async function sfEval(fen) {
+  if (fen in evalCache) {
+    return evalCache[fen];
+  }
   const whiteTurnForEval = fen.split(" ")[1] === "w";
   await waitForStockfish();
   sendStockfishCommand('position fen ' + fen);
@@ -124,6 +131,7 @@ async function sfEval(fen) {
       if (!whiteTurnForEval) {
         latestEval = -latestEval;
       }
+      evalCache[fen] = latestEval;
       return latestEval;
     }
   }
@@ -169,6 +177,9 @@ function nextPuzzle() {
   }
   currentGame = { moves: [], initialFen: fen };
   currentBoard = new Chess(fen);
+  sfEval(fen).then((feneval) => {
+    initialEval = feneval;
+  });
   loadGame(currentGame);
 }
 
@@ -202,7 +213,12 @@ function redrawMoves() {
     const subel2 = document.createElement("div");
     const successBox = document.createElement("div");
     successBox.className = "successbox";
-    successBox.innerText = "✅";
+    if(movesSurvived >= index){
+      successBox.innerText = "✅";
+    }
+    else {
+      successBox.innerText = "❌";
+    }
 
     subel1.className = "singlemove";
     subel2.className = "singlemove";
@@ -218,6 +234,53 @@ function redrawMoves() {
     }
     movesContainer.appendChild(el);
   });
+  let statusEl = document.createElement("div");
+  statusEl.id = "status";
+  movesContainer.appendChild(statusEl);
+  redrawStatus();
+}
+function adjustRating(isWin){
+  let ratingChange = 0;
+  if(isWin){
+    ratingChange = 10;
+  } else {
+    ratingChange = -10;
+  }
+  rating = parseInt(rating) + ratingChange;
+  localStorage.setItem("rating", rating);
+  document.getElementById("ratingnum").innerText = rating;
+}
+function redrawStatus(){
+  const statusContainer = document.getElementById("status");
+  statusContainer.innerHTML = "<br><br>";
+  const el = document.createElement("div");
+  el.className = "status";
+  el.innerText = "Moves survived: " + movesSurvived + "/" + NUM_MOVES;
+  statusContainer.appendChild(el);
+  let isOver = !isAlive || movesSurvived >= NUM_MOVES || currentBoard.game_over();
+  let won = isAlive;
+  if(isOver){
+    if(won){
+      el.innerText = "You survived!";
+    } else {
+      el.innerText = "You lost!";
+    }
+    let nextButton = document.createElement("button");
+    nextButton.innerText = "Next puzzle";
+    nextButton.className = "button"
+    nextButton.onclick = function(){
+      adjustRating(won);
+      nextPuzzle();
+    };
+    let analysisButton = document.createElement("button");
+    analysisButton.innerText = "Analyze";
+    analysisButton.className = "button"
+    analysisButton.onclick = function(){
+      window.open("https://lichess.org/analysis/" + currentGame.initialFen);
+    }
+    statusContainer.appendChild(nextButton);
+    statusContainer.appendChild(analysisButton);
+  }
 }
 
 async function drawEvalBar(isInitial) {
@@ -240,6 +303,9 @@ async function drawEvalBar(isInitial) {
 }
 
 function loadGame(game) {
+  isAlive = true;
+  movesSurvived = 0;
+
   const config = {
     position: currentBoard.fen(),
     pieceTheme: archconf.pieceTheme,
@@ -256,6 +322,8 @@ function loadGame(game) {
   updateButtonActivation();
   drawBoard();
   drawEvalBar(true);
+  
+  
 }
 
 function updateButtonActivation() {
@@ -298,10 +366,22 @@ function stockfishMove() {
     playedMove = m;
     currentGame.moves.push(move);
     moveSelected = currentGame.moves.length;
-    redrawMoves();
     updateButtonActivation();
     drawEvalBar();
+    sfEval(currentBoard.fen()).then((feneval) => {
+      let wChanceDiff = winRate(feneval) - winRate(initialEval);
+      if (!ourColor) {
+        wChanceDiff = -wChanceDiff;
+      }
+      if(wChanceDiff > -20 && isAlive) {
+        movesSurvived++;
+      } else {
+        isAlive = false;
+      }
+      redrawMoves();
+      
   });
+});
 }
 
 function onDrop(source, target) {
