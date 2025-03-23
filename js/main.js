@@ -1,8 +1,140 @@
+var wasmSupported = typeof WebAssembly === 'object' && WebAssembly.validate(Uint8Array.of(0x0, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00));
+
+var stockfish = new Worker(wasmSupported ? 'js/stockfish.wasm.js' : 'js/stockfish.js');
+
+let stockfishLoaded = false;
+
+stockfish.onmessage = function(event){
+  if(event.data == "loaded"){
+    console.log("Stockfish loaded")
+    stockfishLoaded = true;
+  }
+}
+async function waitForStockfish(){
+  return new Promise((resolve, reject)=>{
+    if(stockfishLoaded){
+      resolve()
+    }
+    else{
+      stockfish.addEventListener('message', function (e) {
+        if(e.data == "loaded"){
+          //setTimeout(()=>resolve(), 1000)
+          resolve()
+        }
+      });
+    }
+  })
+}
+
+async function sfMove(fen){
+  await waitForStockfish();
+  stockfish.postMessage('position fen ' + fen);
+  stockfish.postMessage('go depth 11');
+  return new Promise((resolve, reject)=>{
+    stockfish.addEventListener('message', function (e) {
+      if(e.data.startsWith("bestmove")){
+        resolve(e.data.split(" ")[1])
+      }
+    });
+  })
+}
+
+async function delayResult(ms, result){
+  return new Promise((resolve, reject)=>{
+    setTimeout(()=>resolve(result), ms)
+  })
+}
+
+function winRate(centipawn){
+  return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * centipawn)) - 1) // https://lichess.org/page/accuracy
+}
+
+async function sfEval(fen){
+  let whiteTurn = fen.split(" ")[1] == "w";
+  console.log(whiteTurn)
+  await waitForStockfish();
+  stockfish.postMessage('position fen ' + fen);
+  stockfish.postMessage('go depth 10');
+  return new Promise((resolve, reject)=>{
+    let latestEval = null;
+    stockfish.addEventListener('message', function (e) {
+      if(e.data.includes(" cp ")) {
+        const match = e.data.match(/score cp (-?\d+)/);
+        if (match) {
+          console.log("CURRENT RATING", match[1])
+          latestEval = match[1];
+        }
+      }
+      if(e.data.includes("mate ")){
+        const match = e.data.match(/mate (-?\d+)/);
+        if (match) {
+          if(match[1] > 0){
+            latestEval = 10000;
+          }
+          else{
+            latestEval = -10000;
+          }
+        }
+      }
+      if(e.data.includes("bestmove")){
+        if(whiteTurn == false){
+          latestEval = -latestEval;
+        }
+          console.log("FINAL RATING", latestEval)
+        resolve(latestEval)
+      }
+    });
+  })
+}
+
+
 let rating = localStorage.getItem("rating")
+const NUM_MOVES = 3;
+
 if(!rating){
   rating = 1200;
   localStorage.setItem("rating", rating)
 }
+const puzzles = await fetch("rated_reverse_puzzles.tsv").then(r=>r.text()).then(t=>t.split("\n").map(l=>l.split("\t")))
+let currentPuzzle = null;
+
+// Choose random puzzle based on rating
+function getPuzzle(){
+  let availablePuzzles = puzzles.filter(p=>Math.abs(p[1]-rating) < 100);
+  if(availablePuzzles.length == 0){
+    availablePuzzles = puzzles;
+  }
+  currentPuzzle = availablePuzzles[Math.floor(Math.random()*availablePuzzles.length)];
+  return currentPuzzle;
+}
+
+let board = Chessboard('playboard')
+let currentGame = null;
+let currentBoard = new Chess()
+let moveSelected = null;
+let playedMove = null;
+let whiteTurn = true;
+let ourColor = true;
+
+function nextPuzzle(){
+  let p = getPuzzle();
+  let fen = p[0];
+  let turn = p[0].split(" ")[1];
+  if(turn == "w"){
+    whiteTurn = true;
+    ourColor = true;
+  }
+  else{
+    whiteTurn = false;
+    ourColor = false;
+  }
+  currentGame = {moves: []};
+  currentGame.initialFen = fen;
+  currentBoard = new Chess(fen);
+  loadGame(currentGame);
+}
+nextPuzzle();
+
 document.getElementById("ratingnum").innerText = rating;
 
 function redrawMoves(){
@@ -22,7 +154,9 @@ function redrawMoves(){
 
     subel1.className = subel2.className = "singlemove";
     subel1.innerText = doubleMove[0];
-    subel2.innerText = doubleMove[1];
+    if(doubleMove[1]){
+    subel2.innerText = doubleMove[1].from + " " + doubleMove[1].to;
+    }
 
     el.appendChild(subel1)
     if(doubleMove[1]){
@@ -34,27 +168,30 @@ function redrawMoves(){
   }
 
 }
-
+async function drawEvalBar(isInitial){
+  if(isInitial){
+    document.getElementById("evalbar-inner").style.transition = "none";
+  }
+  let sfeval = await sfEval(currentBoard.fen());
+  let centipawn = parseInt(sfeval);
+  let winrate = winRate(centipawn);
+  document.getElementById("evalbar-inner").style.height = winrate + "%";
+  if(ourColor){
+    document.getElementById("evalbar-inner").style.top = (100-winrate) + "%";
+  }
+  else{
+    document.getElementById("evalbar-inner").style.top = "0%";
+  }
+  setTimeout(()=>document.getElementById("evalbar-inner").style.transition = "height 0.5s", 100);
+}
 
 const archconf = {
   pieceTheme: 'img/chesspieces/wikipedia/{piece}.png',
 }
 
-let board = Chessboard('playboard')
-
-
-
-let currentGame = null;
-let currentBoard = new Chess()
-let moveSelected = null;
-let playedMove = null;
-let whiteTurn = true;
-
 function loadGame(game){
-  currentGame = game;
-  currentBoard.load_pgn(currentGame.moves.join(" "))
   const config = {
-    position: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", // currentBoard.fen(),
+    position: currentBoard.fen(),
     pieceTheme: 'img/chesspieces/wikipedia/{piece}.png',
     draggable: Boolean(currentGame),
     onDragStart: onDragStart,
@@ -62,7 +199,7 @@ function loadGame(game){
     onSnapEnd: onSnapEnd
   }
   board = Chessboard('playboard', config);
-  board.orientation(currentBoard.turn()=="w"?"white":"black")
+  board.orientation(ourColor?"white":"black")
   redrawMoves();
 
   playedMove = null;
@@ -70,15 +207,35 @@ function loadGame(game){
 
   updateButtonActivation();
   drawBoard()
+  drawEvalBar(true);
 }
-loadGame({moves: []})
 
 function playMove(move){
+  whiteTurn = !whiteTurn;
   playedMove = move;
   currentGame.moves.push(playedMove)
   moveSelected = currentGame.moves.length
   redrawMoves();
   updateButtonActivation();
+  stockfishMove();
+  drawEvalBar();
+}
+function stockfishMove(){
+  whiteTurn = !whiteTurn;
+  let fen = currentBoard.fen();
+  delayResult(500, sfMove(fen)).then(m=>{
+    let startPos = m.slice(0, 2);
+    let endPos = m.slice(2, 4);
+    let move = {from: startPos, to: endPos, promotion: 'q'};
+    currentBoard.move(move);
+    board.position(currentBoard.fen(), true)
+    playedMove = m;
+    currentGame.moves.push(move)
+    moveSelected = currentGame.moves.length
+    redrawMoves();
+    updateButtonActivation();
+    drawEvalBar();
+  })
 }
 
 function onDrop (source, target) {
@@ -105,13 +262,16 @@ function updateButtonActivation(){
 }
 function drawBoard(){
   let moves = currentGame.moves.slice(0, moveSelected).join(" ");
-  currentBoard.load_pgn(moves)
+  currentBoard.fen(currentGame.initialFen);
+  moves.split(" ").forEach(m=>{
+    currentBoard.move(m);
+  })
   board.position(currentBoard.fen(), true)
 }
 
 function onDragStart (source, piece, position, orientation) {
   if(playedMove){
-    return false;
+    //return false;
   }
   if(moveSelected != currentGame.moves.length){
     return false;

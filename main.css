@@ -232,3 +232,30 @@ div.doublemove > div:nth-child(2){
   color: #6666aaBF;
   font-size: 2em;
 }
+#evalbar{
+  width: 50px;
+  height: 100%;
+  background-color: #aa6666BF; /* Brightened red */
+  border-radius: 10px;
+}
+.eval-wrapper{
+  display: inline-block;
+  margin-left: 20px;
+  margin-right: 20px;
+  margin-top: 50px;
+  margin-bottom: 50px;
+}
+#evalbar-inner{
+  transition: height 0.5s;
+  height: 0;
+  background-color: #6666aaBF; /* Brightened blue */
+  border-radius: 10px;
+  position: relative;
+}
+#evalbar-inner, #evalbar{
+    box-shadow: inset 5px 5px 7px 4px #08080870, inset -5px -5px 7px 4px #44444470; /* Stronger shadow for more contrast */
+}
+
+img{
+  filter: brightness(170%);
+}
