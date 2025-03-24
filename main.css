@@ -15,9 +15,16 @@ body{
   background-color: var(--main-color);
   font-family: 'Roboto', sans-serif;
   user-select: none;
+body{
+  margin: 0;
+  background-color: var(--main-color);
+  font-family: 'Roboto', sans-serif;
+  user-select: none;
+  overflow-x: hidden; /* Prevent horizontal scrolling */
 }
 .layout{
   display: grid;
+}
 }
 .logo{
   color: var(--main-color);
@@ -53,11 +60,13 @@ input[type=number]::-webkit-inner-spin-button {
   -webkit-appearance: none;
 }
 .navbar{
-  width: 60vw;
-  height: 100px;
-  background-color: var(--main-color);
-  box-shadow: inset 5px 5px 10px 6px #0808084F, inset -5px -5px 10px 6px #4444444F; /* Increased shadow contrast */
-  display: block;
+}
+.top{
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+}
   margin: 15px;
   border-radius: 10px;
 }
@@ -86,9 +95,11 @@ input[type=number]::-webkit-inner-spin-button {
   box-shadow: inset 5px 5px 5px 3px #0808084F, inset -5px -5px 5px 3px #4444444F; /* Increased shadow contrast */
   cursor: default;
 }
-.content{
-  height: calc(95vh - 150px);
-  margin-left: 5vh;
+.content-play{
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+}
   margin-top: 10px;
   width: 95vw;
   background-color: var(--main-color);
@@ -264,15 +275,104 @@ div.doublemove > div:nth-child(2){
     box-shadow: inset 5px 5px 7px 4px #08080870, inset -5px -5px 7px 4px #44444470; /* Stronger shadow for more contrast */
 }
 
-img{
-  filter: brightness(170%);
 }
 
-#status{
-  text-shadow: -1px -1px 2px #6666667F, 1px 1px 2px #0000007F; /* Brightened shadow */
-  font-size: 2em;
-  margin: 20px;
-  text-align: center;
-  color: var(--main-color);
-  font-weight: 900;
+/* Media Queries for Responsiveness */
+@media only screen and (max-width: 768px) {
+  .logo {
+    font-size: calc(5vw + 2vh);
+    width: 100%;
+  }
+  
+  .navbar {
+    width: 90vw;
+    height: auto;
+    margin: 10px auto;
+  }
+  
+  .nav-el {
+    padding: 15px;
+    margin: 10px;
+    font-size: 14px;
+  }
+  
+  .content {
+    height: auto;
+    min-height: 80vh;
+    margin: 10px auto;
+    width: 95vw;
+  }
+  
+  #playboard, #archiveboard {
+    height: 90vw;
+    width: 90vw;
+    max-height: 70vh;
+    max-width: 70vh;
+    margin: 10px auto;
+  }
+  
+  .movecontrol, #moves, #archivedgames, #rating {
+    margin: 15px auto;
+    width: 90%;
+    height: auto;
+    min-height: 30vh;
+  }
+  
+  #rating {
+    width: 90% !important;
+  }
+  
+  #archivedgames {
+    width: 90% !important;
+  }
+  
+  .doublemove {
+    margin-left: 5%;
+    width: 90%;
+  }
+  
+  .eval-wrapper {
+    margin: 20px 10px;
+  }
 }
+
+@media only screen and (max-width: 480px) {
+  .logo {
+    font-size: calc(6vw + 2vh);
+    margin: 10px;
+  }
+  
+  .nav-el {
+    padding: 10px;
+    margin: 5px;
+    font-size: 12px;
+  }
+  
+  .button {
+    padding: 12px;
+    margin: 5px;
+    font-size: 14px;
+  }
+  
+  .singlemove {
+    padding: 5px;
+    margin: 3px 5px;
+  }
+  
+  #evalbar {
+    width: 40px;
+    height: 150px;
+    display: inline-block;
+  }
+  
+  #playboard, #archiveboard {
+    height: 45vw;
+    width: 45vw;
+    max-height: 50vh;
+    max-width: 50vh;
+  }
+  
+  #status {
+    font-size: 1.5em;
+    margin: 10px;
+  }
