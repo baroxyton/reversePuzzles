@@ -106,7 +106,26 @@ async function sfEval(fen) {
   if (fen in evalCache) {
     return evalCache[fen];
   }
+  
+  // Use Chess.js to check for game-ending positions
+  const testBoard = new Chess(fen);
   const whiteTurnForEval = fen.split(" ")[1] === "w";
+  
+  // Handle terminal positions
+  if (testBoard.game_over()) {
+    let result;
+    if (testBoard.in_checkmate()) {
+      // Current player is checkmated
+      result = whiteTurnForEval ? -10000 : 10000;
+    } else {
+      // Draw (stalemate, insufficient material, etc.)
+      result = 0;
+    }
+    evalCache[fen] = result;
+    return result;
+  }
+  
+  // Proceed with Stockfish evaluation for non-terminal positions
   await waitForStockfish();
   sendStockfishCommand('position fen ' + fen);
   sendStockfishCommand('go depth 10');
@@ -267,7 +286,7 @@ function redrawStatus(){
   el.className = "status";
   el.innerText = "Moves survived: " + movesSurvived + "/" + NUM_MOVES;
   statusContainer.appendChild(el);
-  let isOver = !isAlive || movesSurvived >= NUM_MOVES || currentBoard.game_over();
+  let isOver = !isAlive || movesSurvived >= NUM_MOVES || currentBoard.game_over() || currentBoard.in_checkmate();
   let won = isAlive||isWin;
   if(won && isOver){
     isWin = true;
@@ -395,7 +414,6 @@ function stockfishMove() {
         isAlive = false;
       }
       redrawMoves();
-      
   });
 });
 }
