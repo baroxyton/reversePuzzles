@@ -167,6 +167,10 @@ const checkAudio = new Audio("sounds/check.mp3");
 const checkmateAudio = new Audio("sounds/checkmate.mp3");
 
 function playSound(sound){
+  if(!sound){
+    moveAudio.play();
+    return;
+  }
   sound.play();
 }
 
@@ -396,9 +400,11 @@ function stockfishMove() {
     const endPos = m.slice(2, 4);
     const move = { from: startPos, to: endPos, promotion: 'q' };
     let sfmove = currentBoard.move(move);
-    playSound(sfmove.captured ? captureAudio : moveAudio);
+    playSound(sfmove.captured ? captureAudio : 
+              currentBoard.in_checkmate() ? checkmateAudio : 
+              currentBoard.in_check() ? checkAudio : 
+              moveAudio);
     board.position(currentBoard.fen(), true);
-    playedMove = m;
     currentGame.moves.push(move);
     moveSelected = currentGame.moves.length;
     updateButtonActivation();
@@ -427,7 +433,10 @@ function onDrop(source, target) {
   if (move === null) return 'snapback';
   const movePGN = currentBoard.pgn().split(" ").slice(-1)[0];
   playMove(movePGN);
-  playSound(move.captured ? captureAudio : moveAudio);
+  playSound(move.captured ? captureAudio : 
+            currentBoard.in_checkmate() ? checkmateAudio : 
+            currentBoard.in_check() ? checkAudio : 
+            moveAudio);
 }
 
 function onDragStart(source, piece, position, orientation) {
@@ -484,18 +493,23 @@ initGame();
 // ------------------
 // Sound initialization
 // ------------------
+// ------------------
+// Sound initialization
+// ------------------
 
-const audio = new Audio('path/to/sound.mp3');
+const audio = new Audio(null);
 
 function enableAudioPlayback() {
     audio.play().catch(error => {
         console.error('Audio playback failed:', error);
     });
-    // Remove the listener after the first interaction to avoid redundant calls
-    window.removeEventListener('click', enableAudioPlayback);
+    // Remove all event listeners to avoid redundant calls
+    ['click', 'keydown', 'touchstart'].forEach(event => {
+        window.removeEventListener(event, enableAudioPlayback);
+    });
 }
 
-// Enable audio playback on the first user Interaction
+// Enable audio playback on the first user interaction
 ['click', 'keydown', 'touchstart'].forEach(event => {
     window.addEventListener(event, enableAudioPlayback);
 });
