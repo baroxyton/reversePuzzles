@@ -275,7 +275,14 @@ div.doublemove > div:nth-child(2){
     box-shadow: inset 5px 5px 7px 4px #08080870, inset -5px -5px 7px 4px #44444470; /* Stronger shadow for more contrast */
 }
 
+#status{
+  font-size: 2em;
+  margin: 20px;
+  text-align: center;
+  color: #b8c9d9; /* Brightened text color */
+  text-shadow: 0px 0px 10px #b8c9d9BF; /* Brightened text shadow */
 }
+
 
 /* Media Queries for Responsiveness */
 @media only screen and (max-width: 768px) {
