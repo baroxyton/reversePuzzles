@@ -194,6 +194,7 @@ function getPuzzle() {
 }
 
 function nextPuzzle() {
+  redrawRating();
   isRetry = false;
   const p = getPuzzle();
   if (!p) {
@@ -282,7 +283,6 @@ function adjustRating(isWin){
   let newRating = glicko2RatingUpdate(rating.rating, rating.rd, rating.sigma, 0.06, puzzleRating, 200, score);
   rating = newRating;
   localStorage.setItem("glicko2rating", JSON.stringify(rating));
-  redrawRating();
 }
 function redrawStatus(){
   const statusContainer = document.getElementById("status");
