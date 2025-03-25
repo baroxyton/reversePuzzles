@@ -34,7 +34,7 @@ if (!rating) {
 }
 const NUM_MOVES = 3;
 
-// Board and game state
+let isRetry = false; // Flag to track if current puzzle is a retry
 let board = null; // Will be initialized in loadGame
 let currentGame = null;
 let currentBoard = new Chess();
@@ -194,6 +194,7 @@ function getPuzzle() {
 }
 
 function nextPuzzle() {
+  isRetry = false;
   const p = getPuzzle();
   if (!p) {
     console.error("No valid puzzle found.");
@@ -297,27 +298,66 @@ function redrawStatus(){
   }
 
   if(isOver){
+    // Immediately adjust rating when the game is over
+        if(!document.getElementById("ratingAdjusted") && !isRetry) {
+      adjustRating(won);
+      const marker = document.createElement("div");
+      marker.id = "ratingAdjusted";
+      marker.style.display = "none";
+      statusContainer.appendChild(marker);
+    }
+
+    
     if(won){
       el.innerText = "You survived!";
     } else {
       el.innerText = "You lost!";
     }
+    
     let nextButton = document.createElement("button");
     nextButton.innerText = "Next puzzle";
     nextButton.className = "button"
+
     nextButton.onclick = function(){
-      adjustRating(won);
       nextPuzzle();
     };
+    
     let analysisButton = document.createElement("button");
     analysisButton.innerText = "Analyze";
     analysisButton.className = "button"
     analysisButton.onclick = function(){
       window.open("https://lichess.org/analysis/" + currentGame.initialFen);
     }
+    
     statusContainer.appendChild(nextButton);
     statusContainer.appendChild(analysisButton);
+    
+    // Add retry button when player loses
+    if(!won) {
+            let retryButton = document.createElement("button");
+      retryButton.innerText = "Retry";
+      retryButton.className = "button";
+      retryButton.onclick = function(){
+        // Reset the current puzzle without adjusting rating
+        isRetry = true; // Set retry flag
+        currentGame = { moves: [], initialFen: currentPuzzle[0] };
+        currentBoard = new Chess(currentPuzzle[0]);
+        sfEval(currentPuzzle[0]).then((feneval) => {
+          initialEval = feneval;
+        });
+        loadGame(currentGame);
+      };
+      statusContainer.appendChild(retryButton)
+              
+    }
+     // Add show solution button
+      let solutionButton = document.createElement("button");
+      solutionButton.innerText = "Show possible solution";
+      solutionButton.className = "button";
+      solutionButton.onclick = showSolution;
+      statusContainer.appendChild(solutionButton);
   }
+
 }
 
 async function drawEvalBar(isInitial) {
@@ -489,10 +529,47 @@ async function initGame() {
 }
 
 initGame();
+// ------------------
+// Show solution function
+// ------------------
 
-// ------------------
-// Sound initialization
-// ------------------
+async function showSolution() {
+  // Reset to initial position and mark as retry
+  isRetry = true;
+  currentGame = { moves: [], initialFen: currentPuzzle[0] };
+  currentBoard = new Chess(currentPuzzle[0]);
+  loadGame(currentGame);
+  
+  // Demonstrate 3 best moves
+  for (let i = 0; i < NUM_MOVES; i++) {
+    // Wait 2 seconds before each move
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Get best move from Stockfish
+    const bestMove = await sfMove(currentBoard.fen());
+    const startPos = bestMove.slice(0, 2);
+    const endPos = bestMove.slice(2, 4);
+    
+    // Play the move
+    const move = currentBoard.move({ from: startPos, to: endPos, promotion: 'q' });
+    playSound(move.captured ? captureAudio : 
+              currentBoard.in_checkmate() ? checkmateAudio : 
+              currentBoard.in_check() ? checkAudio : 
+              moveAudio);
+    
+    // Update the game state
+    board.position(currentBoard.fen(), true);
+    const movePGN = currentBoard.pgn().split(" ").slice(-1)[0];
+    currentGame.moves.push(movePGN);
+    
+    if (i < NUM_MOVES) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      await stockfishMove();
+    }
+  }
+}
+
+
 // ------------------
 // Sound initialization
 // ------------------

@@ -147,7 +147,7 @@ input[type=number]::-webkit-inner-spin-button {
   border-radius: 10px;
   background-color: var(--main-color);
   box-shadow: 3px 3px 5px 5px #4444445F, -3px -3px 5px 5px #0808088F; /* Increased shadow contrast */
-  overflow-y: scroll;
+  overflow-y: auto;
 }
 #rating{
   width: 12vw !important;
@@ -383,3 +383,4 @@ div.doublemove > div:nth-child(2){
     font-size: 1.5em;
     margin: 10px;
   }
+
