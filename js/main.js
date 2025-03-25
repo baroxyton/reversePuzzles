@@ -513,6 +513,15 @@ document.body.addEventListener("keydown", (e) => {
     drawBoard();
   }
 });
+document.body.addEventListener("click", (e)=>{
+  if(e.target.className == "singlemove"){
+    let index = Array.from(document.querySelectorAll(".singlemove")).indexOf(e.target);
+    moveSelected = index + 1;
+    updateButtonActivation();
+    playSound(moveAudio);
+    drawBoard();
+  }
+})
 
 // ------------------
 // Initialization
