@@ -117,7 +117,7 @@ input[type=number]::-webkit-inner-spin-button {
 }
 [class*="board-"]{
   border-radius: 10px;
-  box-shadow: 8px 8px 8px #05050522, inset 8px 8px 6px #44444444; /* Increased shadow contrast */
+  box-shadow: 10px 10px 2px 2px  #2b1d0e, 15px 15px 15px 8px #05050566; /* Increased shadow contrast */
 }
 [class*="black"]{
   background-color: #0a0a0a !important; /* Darker black for higher contrast */
@@ -126,8 +126,8 @@ input[type=number]::-webkit-inner-spin-button {
 }
 
 [class*="white"]{
-  background-color: #333333 !important; /* Lighter white for higher contrast */
-  box-shadow: inset -2px -2px 7px 1px #777, inset 2px 2px 7px 1px #111; /* Increased shadow contrast */
+  background-color: #444 !important; /* Lighter white for higher contrast */
+  box-shadow: inset -2px -2px 7px 1px #77777766, inset 2px 2px 7px 1px #11111199; /* Increased shadow contrast */
   color: #bbb !important; /* Brightened text */
 }
 [class*="board"]{
@@ -150,7 +150,7 @@ input[type=number]::-webkit-inner-spin-button {
   height: 70vh;
   border-radius: 10px;
   background-color: var(--main-color);
-  box-shadow: inset 5px 5px 5px 3px #44444422, 5px 5px 5px 7px #08080844;
+  box-shadow: -5px -5px 5px 3px #44444422, 5px 5px 5px 7px #08080866;
   overflow-y: auto;
   border: none;
 }
@@ -252,9 +252,8 @@ div.doublemove > div:nth-child(2){
   display: inline-block;
 }
 #ratingnum{
-  color: #6666aaBF;
-  font-size: 2em;
-  text-shadow: -1px -1px 2px #8888ccCC, 1px 1px 2px #444488CC; /* Brightened shadow */
+  color: #7777bbBF;
+  font-size: 2.5em;
 }
 #evalbar{
   width: 50px;
@@ -384,4 +383,11 @@ div.doublemove > div:nth-child(2){
     max-height: 50vh;
     max-width: 50vh;
   }
-  
+}
+
+[class *= "notation-"]{
+  display: none;
+}
+img[class*= "piece"]{
+  filter: drop-shadow(2px 2px 5px #000000DD) brightness(1.5);
+}
