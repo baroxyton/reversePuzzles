@@ -46,6 +46,13 @@ let isWin = false;
 let initialEval = null;
 let whiteTurn = true;
 let ourColor = true;
+let viewMode = false; // When true, rating isn't affected by puzzle results
+
+// Add after the existing global variables
+function getUrlParameter(name) {
+  const urlParams = new URLSearchParams(window.location.search);
+  return urlParams.get(name);
+}
 
 // ------------------
 // Stockfish Communication
@@ -194,6 +201,12 @@ function getPuzzle() {
 }
 
 function nextPuzzle() {
+  if (viewMode) {
+    // Exit view mode by removing URL parameter
+    history.pushState({}, document.title, window.location.pathname);
+    viewMode = false;
+  }
+  
   redrawRating();
   isRetry = false;
   const p = getPuzzle();
@@ -278,6 +291,10 @@ function redrawRating(){
   document.getElementById("ratingnum").innerText = Math.floor(rating.rating);
 }
 function adjustRating(isWin){
+  if (viewMode || isRetry) {
+    // Skip rating adjustment in view mode or during retry
+    return;
+  }
   let puzzleRating = currentPuzzle[1];
   let score = isWin ? 1 : 0;
   let newRating = glicko2RatingUpdate(rating.rating, rating.rd, rating.sigma, 0.06, puzzleRating, 200, score);
@@ -289,7 +306,13 @@ function redrawStatus(){
   statusContainer.innerHTML = "<br><br>";
   const el = document.createElement("div");
   el.className = "status";
-  el.innerText = "Moves survived: " + movesSurvived + "/" + NUM_MOVES;
+  
+  if (viewMode) {
+    el.innerText = "Viewing puzzle #" + puzzles.indexOf(currentPuzzle);
+  } else {
+    el.innerText = "Moves survived: " + movesSurvived + "/" + NUM_MOVES;
+  }
+  
   statusContainer.appendChild(el);
   let isOver = !isAlive || movesSurvived >= NUM_MOVES || currentBoard.game_over() || currentBoard.in_checkmate();
   let won = isAlive||isWin;
@@ -299,7 +322,7 @@ function redrawStatus(){
 
   if(isOver){
     // Immediately adjust rating when the game is over
-    if(!document.getElementById("ratingAdjusted") && !isRetry) {
+    if(!document.getElementById("ratingAdjusted") && !isRetry && !viewMode) {
       adjustRating(won);
       const marker = document.createElement("div");
       marker.id = "ratingAdjusted";
@@ -529,10 +552,50 @@ document.body.addEventListener("click", (e)=>{
 
 async function initGame() {
   await loadPuzzles();
-  // Now that puzzles are loaded, start with the first puzzle.
-  nextPuzzle();
-  // Update rating display if needed.
+  
+  // Check for puzzle URL parameter
+  const puzzleIndex = getUrlParameter('puzzle');
+  if (puzzleIndex !== null && !isNaN(parseInt(puzzleIndex))) {
+    viewMode = true;
+    // Load the specific puzzle by index
+    if (puzzleIndex < puzzles.length) {
+      currentPuzzle = puzzles[parseInt(puzzleIndex)];
+      loadPuzzleFromCurrent();
+    } else {
+      // If puzzle index is invalid, fall back to normal mode
+      viewMode = false;
+      nextPuzzle();
+    }
+  } else {
+    // Normal mode - load a random puzzle
+    nextPuzzle();
+  }
+  
+  // Update rating display
   redrawRating();
+}
+
+// Add this helper function
+function loadPuzzleFromCurrent() {
+  if (!currentPuzzle) {
+    console.error("No valid puzzle found.");
+    return;
+  }
+  const fen = currentPuzzle[0];
+  const turn = fen.split(" ")[1];
+  if (turn === "w") {
+    whiteTurn = true;
+    ourColor = true;
+  } else {
+    whiteTurn = false;
+    ourColor = false;
+  }
+  currentGame = { moves: [], initialFen: fen };
+  currentBoard = new Chess(fen);
+  sfEval(fen).then((feneval) => {
+    initialEval = feneval;
+  });
+  loadGame(currentGame);
 }
 
 initGame();
@@ -598,3 +661,11 @@ function enableAudioPlayback() {
   window.addEventListener(event, enableAudioPlayback);
 });
 
+window.shareGame = function(){
+  let url = window.location.href + "?puzzle=" + puzzles.indexOf(currentPuzzle);
+  navigator.clipboard.writeText(url).then(function() {
+    alert("URL copied to clipboard: " + url);
+  }, function(err) {
+    alert("Failed to copy URL to clipboard: " + err);
+  });
+}
