@@ -13,3 +13,5 @@ Reverse puzzles are a novel twist on normal chess puzzles: You are on the receiv
 **Sound files**: Derivative work of stockfish lila sound effects https://github.com/lichess-org/lila
 
 **Maia Chess**: Human-like chess engine used to calculate ratings. https://www.maiachess.com/
+
+**Font**: Google roboto https://fonts.google.com/specimen/Roboto
