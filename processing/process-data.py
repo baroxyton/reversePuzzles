@@ -8,13 +8,13 @@ from tqdm import tqdm
 
 # Configurations
 STOCKFISH_PATH = "/usr/bin/stockfish"
-STOCKFISH_DEPTH = 5
+STOCKFISH_DEPTH = 11
 MAIA_BASE_CMD = "lc0 --backend=blas --weights=/home/jonathan/dev/reversePuzzles/humanModels/maia-{}.pb.gz"
 MAIA_MODELS = ["1100", "1300",  "1500", "1700", "1800", "1900"]
 CENTIPAWN_THRESHOLD = 200
 WIN_PERCENTAGE_THRESHOLD = 40
 MOVES_TO_SURVIVE = 3
-NUM_MAIA_MOVES = 2
+NUM_MAIA_MOVES = 1
 OUTPUT_FILE = "rated_reverse_puzzles.tsv"
 
 def adjust_score_for_side(score, is_white):
@@ -282,7 +282,9 @@ def main():
             # Skip if our position is significantly worse (accounting for side)
             if eval_result["score"] is not None:
                 adjusted_score = adjust_score_for_side(eval_result["score"], is_white)
-                if adjusted_score < -CENTIPAWN_THRESHOLD:
+                if is_white and adjusted_score < -CENTIPAWN_THRESHOLD:
+                    continue
+                elif not is_white and adjusted_score > CENTIPAWN_THRESHOLD:
                     continue
             
             # Calculate initial win percentage (accounting for side)
@@ -421,7 +423,9 @@ def main():
                             else:
                                 # If win percentage dropped by threshold or more, it's a loss
                                 win_pct_drop = initial_win_pct - final_win_pct
-                                results[model].append(win_pct_drop < WIN_PERCENTAGE_THRESHOLD)
+                                #results[model].append(win_pct_drop < WIN_PERCENTAGE_THRESHOLD)
+                                # based on color
+                                results[model].append(win_pct_drop < WIN_PERCENTAGE_THRESHOLD if True else win_pct_drop > WIN_PERCENTAGE_THRESHOLD)
             
             # Calculate puzzle rating
             puzzle_rating = calculate_puzzle_rating(results)
